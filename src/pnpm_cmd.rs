@@ -2,6 +2,26 @@ use anyhow::{Context, Result};
 use std::process::Command;
 use crate::tracking;
 
+/// Validates npm package name according to official rules
+/// https://docs.npmjs.com/cli/v9/configuring-npm/package-json#name
+fn is_valid_package_name(name: &str) -> bool {
+    // Basic validation: alphanumeric, @, /, -, _, .
+    // Reject: path traversal (..), shell metacharacters, excessive length
+    if name.is_empty() || name.len() > 214 {
+        return false;
+    }
+
+    // No path traversal
+    if name.contains("..") {
+        return false;
+    }
+
+    // Only safe characters
+    name.chars().all(|c| {
+        c.is_alphanumeric() || matches!(c, '@' | '/' | '-' | '_' | '.')
+    })
+}
+
 #[derive(Debug, Clone)]
 pub enum PnpmCommand {
     List { depth: usize },
@@ -30,8 +50,7 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("{}", stderr);
-        return Ok(());
+        anyhow::bail!("pnpm list failed: {}", stderr);
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -91,6 +110,13 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
 }
 
 fn run_install(packages: &[String], args: &[String], verbose: u8) -> Result<()> {
+    // Validate package names to prevent command injection
+    for pkg in packages {
+        if !is_valid_package_name(pkg) {
+            anyhow::bail!("Invalid package name: '{}' (contains unsafe characters)", pkg);
+        }
+    }
+
     let mut cmd = Command::new("pnpm");
     cmd.arg("install");
 
@@ -111,11 +137,7 @@ fn run_install(packages: &[String], args: &[String], verbose: u8) -> Result<()> 
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if !output.status.success() {
-        eprintln!("FAILED: pnpm install");
-        if !stderr.trim().is_empty() {
-            eprintln!("{}", stderr);
-        }
-        return Ok(());
+        anyhow::bail!("pnpm install failed: {}", stderr);
     }
 
     let combined = format!("{}{}", stdout, stderr);
@@ -264,5 +286,23 @@ project@1.0.0 /path/to/project
         let result = filter_pnpm_list(output);
         assert!(!result.contains("├"));
         assert!(!result.contains("└"));
+    }
+
+    #[test]
+    fn test_package_name_validation_valid() {
+        assert!(is_valid_package_name("lodash"));
+        assert!(is_valid_package_name("@clerk/express"));
+        assert!(is_valid_package_name("my-package"));
+        assert!(is_valid_package_name("package_name"));
+        assert!(is_valid_package_name("package.js"));
+    }
+
+    #[test]
+    fn test_package_name_validation_invalid() {
+        assert!(!is_valid_package_name("lodash; rm -rf /"));
+        assert!(!is_valid_package_name("../../../etc/passwd"));
+        assert!(!is_valid_package_name("package$name"));
+        assert!(!is_valid_package_name("pack age"));
+        assert!(!is_valid_package_name(&"a".repeat(215))); // Too long
     }
 }
