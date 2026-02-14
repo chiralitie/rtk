@@ -48,6 +48,31 @@ With rtk: **~45,000 tokens** → **70% reduction**
 
 > Estimates based on medium-sized TypeScript/Rust projects. Actual savings vary by project size.
 
+## Benchmark
+
+Measured with `scripts/benchmark.sh` on the rtk repo itself (40 tests, all read-only):
+
+| Category | Shell Tokens | RTK Tokens | Savings |
+|----------|-------------|------------|---------|
+| `ls` (8 tests) | 5,081 | 1,544 | 70% |
+| `read` (4 tests) | 46,290 | 35,521 | 23% |
+| `read --aggressive` | 10,959 | 515 | **95%** |
+| `find` (4 tests) | 45,009 | 689 | **98%** |
+| `git status/log/diff` (4 tests) | 7,452 | 688 | **91%** |
+| `grep` (5 tests) | 33,276 | 3,106 | 91% |
+| `cargo test` | 6,273 | 27 | **99%** |
+| `cargo build (err)` | 1,599 | 660 | 59% |
+| `summary` (2 tests) | 1,542 | 124 | **92%** |
+| `gh` (2 tests) | 993 | 235 | 76% |
+| **Total (40 tests)** | **150,806** | **43,514** | **-71%** |
+
+```bash
+# Run the benchmark yourself
+bash scripts/benchmark.sh
+```
+
+> Results measured on v0.16.0 against the rtk codebase. Token estimation: `ceil(chars / 4)`.
+
 ## Installation
 
 ### ⚠️ Pre-Installation Check (REQUIRED)
